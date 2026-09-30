@@ -45,3 +45,44 @@ def test_generate_local_fallback_summary():
     assert "key_complexes" in summary
     assert "analyst_opinion" in summary
     assert "래미안원베일리" in summary['key_complexes']
+
+
+def test_cache_save_and_load(tmp_path):
+    from src.analyzer import save_cached_report, load_cached_report
+
+    test_date = date(2026, 9, 29)
+    sample_report = {
+        "deal_date": "2026-09-29",
+        "engine": "gemini-1.5-flash",
+        "headline": "반포 래미안원베일리 46억 최고가 신고",
+        "market_trend": "거래량 유지",
+        "key_complexes": "원베일리 심층 분석",
+        "analyst_opinion": "선별적 투자 유효",
+    }
+
+    # 처음에는 캐시가 없어야 함
+    assert load_cached_report(test_date, cache_dir=tmp_path) is None
+
+    # 저장
+    saved_path = save_cached_report(test_date, sample_report, cache_dir=tmp_path)
+    assert saved_path.exists()
+    assert saved_path.name == "2026-09-29.json"
+
+    # 로드
+    loaded = load_cached_report(test_date, cache_dir=tmp_path)
+    assert loaded is not None
+    assert loaded["headline"] == sample_report["headline"]
+    assert loaded["engine"] == "gemini-1.5-flash"
+
+
+def test_path_traversal_defense(tmp_path):
+    from src.analyzer import save_cached_report, load_cached_report
+
+    # deal_date는 반드시 datetime.date 타입이어야 함 (문자열이나 ../ 경로 주입 불가)
+    import pytest
+    with pytest.raises((TypeError, ValueError)):
+        save_cached_report("../../etc/passwd", {}, cache_dir=tmp_path)  # type: ignore
+
+    with pytest.raises((TypeError, ValueError)):
+        load_cached_report("../../etc/passwd", cache_dir=tmp_path)  # type: ignore
+

@@ -166,3 +166,34 @@ def generate_local_fallback_summary(deal_date: date, daily_df: pd.DataFrame) -> 
             }
         }
     }
+
+
+def get_cache_path(deal_date: date, cache_dir: Path | str = "data/reports") -> Path:
+    """날짜별 리포트 캐시 파일 경로를 안전하게 반환합니다. Path Traversal 공격을 방어합니다."""
+    if not isinstance(deal_date, date):
+        raise TypeError("deal_date must be an instance of datetime.date")
+    
+    dir_path = Path(cache_dir)
+    return dir_path / f"{deal_date.isoformat()}.json"
+
+
+def load_cached_report(deal_date: date, cache_dir: Path | str = "data/reports") -> dict | None:
+    """저장된 날짜별 리포트 JSON을 로드합니다. 없으면 None을 반환합니다."""
+    file_path = get_cache_path(deal_date, cache_dir)
+    if not file_path.exists():
+        return None
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def save_cached_report(deal_date: date, report_data: dict, cache_dir: Path | str = "data/reports") -> Path:
+    """날짜별 리포트 JSON을 영속 저장합니다."""
+    file_path = get_cache_path(deal_date, cache_dir)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(report_data, f, ensure_ascii=False, indent=2)
+    return file_path
+
