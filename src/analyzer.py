@@ -53,8 +53,11 @@ def build_analyst_prompt(deal_date: date, daily_df: pd.DataFrame) -> str:
     top3_str = "\n".join(top3_summary)
 
     # 주요 시도별 거래 비중
-    prov_counts = daily_df['province'].value_counts().head(3)
-    prov_summary = ", ".join([f"{p} {c}건" for p, c in prov_counts.items()])
+    if 'province' in daily_df.columns:
+        prov_counts = daily_df['province'].value_counts().head(3)
+        prov_summary = ", ".join([f"{p} {c}건" for p, c in prov_counts.items()])
+    else:
+        prov_summary = f"전국 {total_count:,}건"
 
     prompt = f"""당신은 대한민국 아파트 시장 15년 차 수석 부동산 애널리스트입니다.
 제공된 일자별 국토교통부 공공데이터 실거래 통계를 바탕으로 투자자와 실수요자를 위한 깊이 있는 일일 시황 브리핑 리포트를 작성해 주세요.
@@ -101,11 +104,15 @@ def generate_local_fallback_summary(deal_date: date, daily_df: pd.DataFrame) -> 
             "created_at": now_str,
             "engine": "local-analyst-fallback",
             "headline": f"{date_str} 당일 실거래 신고 내역 부재 속 관망세 지속",
-            "market_trend": "금일 공식 집계된 아파트 매매 실거래 신고 건수는 0건으로, "
-                           "시장 참여자들의 짙은 관망 심리가 반영된 흐름을 보이고 있습니다.",
+            "market_trend": (
+                "금일 공식 집계된 아파트 매매 실거래 신고 건수는 0건으로, "
+                "시장 참여자들의 짙은 관망 심리가 반영된 흐름을 보이고 있습니다."
+            ),
             "key_complexes": "특이 거래 단지가 집계되지 않았습니다.",
-            "analyst_opinion": "부동산 거래 신고 기한(30일)에 따른 시차를 감안할 때, "
-                              "향후 순차적인 거래 인입 추이를 지속 모니터링할 필요가 있습니다.",
+            "analyst_opinion": (
+                "부동산 거래 신고 기한(30일)에 따른 시차를 감안할 때, "
+                "향후 순차적인 거래 인입 추이를 지속 모니터링할 필요가 있습니다."
+            ),
             "stats_snapshot": {"total_count": 0, "avg_amount": 0, "avg_pyeong_price": 0}
         }
 
@@ -172,7 +179,7 @@ def get_cache_path(deal_date: date, cache_dir: Path | str = "data/reports") -> P
     """날짜별 리포트 캐시 파일 경로를 안전하게 반환합니다. Path Traversal 공격을 방어합니다."""
     if not isinstance(deal_date, date):
         raise TypeError("deal_date must be an instance of datetime.date")
-    
+
     dir_path = Path(cache_dir)
     return dir_path / f"{deal_date.isoformat()}.json"
 
@@ -197,3 +204,122 @@ def save_cached_report(deal_date: date, report_data: dict, cache_dir: Path | str
         json.dump(report_data, f, ensure_ascii=False, indent=2)
     return file_path
 
+
+def parse_gemini_response(text: str) -> dict[str, str]:
+    """Gemini 마크다운 응답 텍스트를 파싱하여 4개 섹션 딕셔너리로 변환합니다."""
+    import re
+
+    patterns = {
+        "headline": r"###\s*\[?오늘의\s*시황\s*헤드라인\]?\s*\n(.*?)(?=\n###|\Z)",
+        "market_trend": r"###\s*\[?시장\s*동향(?:\s*및\s*거래\s*활성도)?\]?\s*\n(.*?)(?=\n###|\Z)",
+        "key_complexes": r"###\s*\[?주요\s*단지\s*심층\s*분석\]?\s*\n(.*?)(?=\n###|\Z)",
+        "analyst_opinion": r"###\s*\[?애널리스트\s*총평(?:\s*및\s*시사점)?\]?\s*\n(.*?)(?=\n###|\Z)",
+    }
+
+    result = {}
+    for key, pattern in patterns.items():
+        match = re.search(pattern, text, re.DOTALL)
+        if match:
+            content = match.group(1).strip()
+            # 괄호 안내문 제거 (예: "(시장 분위기와 ...)")
+            content = re.sub(r"^\(.*?\)\s*", "", content)
+            result[key] = content.strip()
+        else:
+            result[key] = ""
+
+    # 특정 섹션이 비어있는 경우 유연한 보완
+    if not result["headline"]:
+        first_line = text.strip().split("\n")[0]
+        result["headline"] = first_line.replace("#", "").strip() or "금일 아파트 실거래 시황 요약"
+    if not result["market_trend"]:
+        result["market_trend"] = "당일 거래량 및 시장 지표에 따른 동향이 집계되었습니다."
+    if not result["key_complexes"]:
+        result["key_complexes"] = "금일 신고된 주요 아파트 거래 내역을 분석 중입니다."
+    if not result["analyst_opinion"]:
+        result["analyst_opinion"] = "시장 추세를 주시하며 선별적인 투자 및 매수 전략이 권장됩니다."
+
+    return result
+
+
+def call_gemini_api(
+    prompt: str,
+    api_key: str,
+    model: str = "gemini-1.5-flash",
+    timeout: int = 15
+) -> str:
+    """Google AI Studio v1beta REST API를 직접 호출하여 Gemini 분석 결과를 가져옵니다."""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.3,
+            "maxOutputTokens": 1024,
+        }
+    }
+
+    resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+    resp.raise_for_status()
+
+    data = resp.json()
+    try:
+        candidate_text = data["candidates"][0]["content"]["parts"][0]["text"]
+        return candidate_text
+    except (KeyError, IndexError) as err:
+        raise ValueError(f"Unexpected response structure from Gemini API: {data}") from err
+
+
+def get_or_create_daily_report(
+    deal_date: date,
+    daily_df: pd.DataFrame,
+    api_key: str | None = None,
+    cache_dir: Path | str = "data/reports",
+    force_refresh: bool = False,
+    model: str = "gemini-1.5-flash"
+) -> dict:
+    """일자별 리포트를 캐시에서 먼저 로드하고, 없을 경우에만 Gemini API(또는 로컬 폴백)로 생성 및 캐시합니다."""
+    # 1. 캐시가 이미 존재하고 강제 갱신이 아닌 경우 즉시 반환 (Zero Cost, Zero Latency)
+    if not force_refresh:
+        cached = load_cached_report(deal_date, cache_dir)
+        if cached is not None:
+            return cached
+
+    # 2. API Key 확인 (인자 -> 환경변수)
+    effective_api_key = api_key or os.getenv("GEMINI_API_KEY")
+
+    now_str = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S KST")
+
+    # API 키가 없으면 로컬 스마트 폴백 생성 후 캐시
+    if not effective_api_key or not effective_api_key.strip():
+        report = generate_local_fallback_summary(deal_date, daily_df)
+        save_cached_report(deal_date, report, cache_dir)
+        return report
+
+    # 3. Gemini API 호출 시도
+    prompt = build_analyst_prompt(deal_date, daily_df)
+    try:
+        raw_text = call_gemini_api(prompt, effective_api_key, model=model)
+        parsed = parse_gemini_response(raw_text)
+        report = {
+            "deal_date": deal_date.isoformat(),
+            "created_at": now_str,
+            "engine": model,
+            "headline": parsed["headline"],
+            "market_trend": parsed["market_trend"],
+            "key_complexes": parsed["key_complexes"],
+            "analyst_opinion": parsed["analyst_opinion"],
+        }
+    except Exception as e:
+        # API 오류(할당량 초과, 네트워크 단절 등) 시 안전하게 스마트 로컬 폴백 생성
+        report = generate_local_fallback_summary(deal_date, daily_df)
+        report["fallback_reason"] = f"Gemini API 호출 실패 ({e.__class__.__name__}): {str(e)}"
+
+    # 4. 결과 캐시 저장
+    save_cached_report(deal_date, report, cache_dir)
+    return report
