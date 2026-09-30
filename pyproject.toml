@@ -1,0 +1,33 @@
+[project]
+name = "aptdaily"
+version = "0.1.0"
+description = "전국 아파트 실거래가(최근 7일) 수집 및 Streamlit 대시보드"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "streamlit>=1.40.0",
+    "pandas>=2.2.0",
+    "pyarrow>=18.0.0",
+    "requests>=2.32.0",
+    "plotly>=5.24.0",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.pyright]
+include = ["src", "app.py", "tests"]
+reportAttributeAccessIssue = false
+reportReturnType = false
+reportArgumentType = false
+reportCallIssue = false
+reportAssignmentType = false
+
+[tool.uv]
+exclude-newer = "10 days"

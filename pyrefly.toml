@@ -1,0 +1,31 @@
+project-includes = [
+    "src",
+    "app.py",
+    "tests",
+]
+search-path = [".", "src"]
+infer-with-first-use = false
+
+[errors]
+missing-source = "ignore"
+read-only = "ignore"
+missing-argument = "ignore"
+bad-argument-type = "ignore"
+bad-return = "ignore"
+incompatible-overload-residual = "ignore"
+unexpected-keyword = "ignore"
+missing-attribute = "ignore"
+not-callable = "ignore"
+bad-argument-count = "ignore"
+invalid-argument = "ignore"
+invalid-yield = "ignore"
+bad-assignment = "ignore"
+no-access = "ignore"
+unexpected-positional-argument = "ignore"
+bad-keyword-argument = "ignore"
+missing-source-for-stubs = "ignore"
+bad-typed-dict-key = "ignore"
+missing-import = "ignore"
+missing-module-attribute = "ignore"
+bad-unpacking = "ignore"
+no-matching-overload = "ignore"
