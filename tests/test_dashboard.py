@@ -69,3 +69,20 @@ def test_get_daily_trend(sample_df):
     assert len(trend) == 3
     assert 'deal_count' in trend.columns
     assert 'avg_amount' in trend.columns
+
+
+def test_filter_data_by_date(sample_df):
+    target_date = date(2026, 9, 26)
+    filtered = filter_data(sample_df, selected_dates=[target_date])
+    assert len(filtered) == 1
+    assert filtered.iloc[0]['apt_name'] == '아크로리버파크'
+    assert filtered.iloc[0]['deal_amount'] == 430000
+
+
+def test_daily_kpis_for_single_date(sample_df):
+    target_date = date(2026, 9, 26)
+    daily_df = filter_data(sample_df, selected_dates=[target_date])
+    kpis = calculate_kpis(daily_df)
+    assert kpis['total_count'] == 1
+    assert kpis['avg_amount'] == 430000
+    assert kpis['max_trade']['apt_name'] == '아크로리버파크'
